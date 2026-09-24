@@ -1,0 +1,15 @@
+name: "Build Flipper Application"
+on: [push, pull_request]
+
+jobs:
+  ufbt-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build with ufbt
+        uses: flipperdevices/flipperzero-ufbt-action@dev
+        with:
+          app-dir: fl-BLE_SPAM-main    # Проверьте, что имя папки внутри вашего репозитория именно такое
+          sdk-channel: release         # Собираем под стабильный релизный SDK
