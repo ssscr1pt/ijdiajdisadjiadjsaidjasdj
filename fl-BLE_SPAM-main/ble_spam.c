@@ -1,12 +1,12 @@
 #include <furi.h>
 #include <furi_hal.h>
-#include <storage/storage.h>
 #include <furi_hal_bt.h>
 #include <gui/gui.h>
 #include <gui/view_dispatcher.h>
 #include <gui/scene_manager.h>
 #include "protocols/_registry.h"
 
+#include <storage/storage.h>
 #define CUSTOM_PACKETS_PATH EXT_PATH("apps_data/ble_spam/apple_custom.txt")
 #define MAX_CUSTOM_PAYLOAD_LEN 31
 
@@ -24,9 +24,8 @@ static void load_custom_apple_packet(void) {
     Storage* storage = furi_record_open(RECORD_STORAGE);
     File* file = storage_file_alloc(storage);
     custom_payload_len = 0;
-    
     if(storage_file_open(file, CUSTOM_PACKETS_PATH, FSAM_READ, FSOM_OPEN_EXISTING)) {
-        char buffer[128];
+        char buffer[128]; // Корректный массив-буфер для чтения строки
         uint16_t read = storage_file_read(file, buffer, sizeof(buffer) - 1);
         if(read > 0) {
             buffer[read] = '\0';
@@ -53,19 +52,18 @@ static void load_custom_apple_packet(void) {
     storage_file_free(file);
     furi_record_close(RECORD_STORAGE);
 }
+/* Конец нашего блока */
 
 // Перехватчик отправки пакета BLE в радиоэфир
 void ble_spam_send_packet(const uint8_t* original_data, uint8_t original_len) {
+    // Наш перехватчик:
     load_custom_apple_packet();
-
-    if(custom_payload_len > 0) {
-        // Если кастомный файл apple_custom.txt существует — шлем его байты!
-        furi_hal_bt_extra_beacon_set_data(custom_payload, custom_payload_len);
-    } else {
-        // Если файла нет — отправляем оригинальный пакет приложения (штатная работа)
-        furi_hal_bt_extra_beacon_set_data(original_data, original_len);
-    }
-}
+        if(custom_payload_len > 0) {
+            furi_hal_bt_extra_beacon_set_data(custom_payload, custom_payload_len);
+        } else {
+    // Здесь оставьте оригинальную строчку, которая была в коде изначально, например:
+            furi_hal_bt_extra_beacon_set_data(tx_data, tx_len); 
+        }
 
 // Главная точка входа приложения Flipper Zero (согласно манифесту application.fam)
 int32_t ble_spam_app(void* p) {
